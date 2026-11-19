@@ -1,18 +1,18 @@
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, Field
 from .models import Role, Status
 
 class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-    id: int; email: EmailStr; full_name: str; role: Role; is_active: bool
+    id: int; username: str; full_name: str; role: Role; is_active: bool
 
 class LoginIn(BaseModel):
-    email: EmailStr; password: str
+    username: str = Field(min_length=3, max_length=80); password: str
 
 class Token(BaseModel): access_token: str; token_type: str = "bearer"; user: UserOut
 
 class UserCreate(BaseModel):
-    email: EmailStr; full_name: str = Field(min_length=2, max_length=120); password: str = Field(min_length=8); role: Role = Role.user
+    username: str = Field(min_length=3, max_length=80); full_name: str = Field(min_length=2, max_length=120); password: str = Field(min_length=8); role: Role = Role.user
 
 class UserUpdate(BaseModel):
     full_name: str | None = None; role: Role | None = None; is_active: bool | None = None

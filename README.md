@@ -8,9 +8,9 @@ Docker-ready ticketing application built with React, TypeScript, Vite, FastAPI a
 2. Run `docker compose up --build`.
 3. Open http://localhost:5173.
 
-The API creates the first admin user from `ADMIN_EMAIL` and `ADMIN_PASSWORD` on startup.
+The API creates the first admin user from `ADMIN_USERNAME` and `ADMIN_PASSWORD` on startup.
 
-Default local credentials are `admin@example.com` / `ChangeMe123!` unless overridden in `.env`.
+Default local credentials are `admin` / `ChangeMe123!` unless overridden in `.env`.
 
 ## Services
 

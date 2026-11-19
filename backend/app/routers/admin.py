@@ -11,8 +11,8 @@ router = APIRouter()
 def users(db: Session = Depends(get_db), _: User = Depends(admin_user)): return db.scalars(select(User).order_by(User.created_at.desc())).all()
 @router.post("/users", response_model=UserOut)
 def create_user(data: UserCreate, db: Session = Depends(get_db), _: User = Depends(admin_user)):
-    if db.scalar(select(User).where(User.email == data.email)): raise HTTPException(409, "Email already exists")
-    user = User(email=data.email, full_name=data.full_name, password_hash=hash_password(data.password), role=data.role); db.add(user); db.commit(); db.refresh(user); return user
+    if db.scalar(select(User).where(User.username == data.username)): raise HTTPException(409, "Username already exists")
+    user = User(username=data.username, full_name=data.full_name, password_hash=hash_password(data.password), role=data.role); db.add(user); db.commit(); db.refresh(user); return user
 @router.patch("/users/{user_id}", response_model=UserOut)
 def update_user(user_id: int, data: UserUpdate, db: Session = Depends(get_db), _: User = Depends(admin_user)):
     user = db.get(User, user_id)
