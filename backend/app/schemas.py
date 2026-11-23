@@ -11,6 +11,17 @@ class LoginIn(BaseModel):
 
 class Token(BaseModel): access_token: str; token_type: str = "bearer"; user: UserOut
 
+class UsernameUpdate(BaseModel):
+    username: str = Field(min_length=3, max_length=80)
+
+class UsernameAvailability(BaseModel):
+    available: bool
+
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8)
+    confirm_password: str
+
 class UserCreate(BaseModel):
     username: str = Field(min_length=3, max_length=80); full_name: str = Field(min_length=2, max_length=120); password: str = Field(min_length=8); role: Role = Role.user
 
