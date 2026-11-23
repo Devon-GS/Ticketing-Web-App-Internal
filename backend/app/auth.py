@@ -5,7 +5,8 @@ from time import monotonic
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
+import jwt
+from jwt.exceptions import InvalidTokenError as JWTError
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 from .db import get_db, settings
