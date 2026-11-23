@@ -1,11 +1,12 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import inspect, select, text
 from .db import Base, SessionLocal, engine, settings
 from .models import Label, User
 from .auth import hash_password, verify_password
 from .routers import auth, tickets, admin
+from .realtime import manager
 
 def migrate_legacy_users():
     if not inspect(engine).has_table("users"):
@@ -39,6 +40,31 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Ticketing API", version="1.0.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+
+
+@app.websocket("/api/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+
+    try:
+        message = await websocket.receive_json()
+        if not isinstance(message, dict) or message.get("type") != "auth" or not isinstance(message.get("token"), str):
+            await websocket.close(code=1008, reason="Authentication required")
+            return
+
+        user = await manager.connect(websocket, message["token"])
+        if not user:
+            await websocket.close(code=1008, reason="Invalid authentication credentials")
+            return
+
+        await websocket.send_json({"type": "auth_ok"})
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        manager.disconnect(websocket)
+
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(tickets.router, prefix="/api/tickets", tags=["tickets"])
 app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
