@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from ..auth import create_token, current_user, hash_password, login_rate_limiter, login_rate_limit_error, verify_password
+from ..auth import create_token, current_user, hash_password, login_rate_limiter, login_rate_limit_error, normalize_token_version, verify_password
 from ..db import get_db
 from ..models import User
 from ..schemas import LoginIn, PasswordChange, Token, UserOut, UsernameAvailability, UsernameUpdate
@@ -19,6 +19,9 @@ def login(data: LoginIn, request: Request, db: Session = Depends(get_db)):
             login_rate_limiter.record_failure(key)
         raise HTTPException(401, "Invalid username or password")
     login_rate_limiter.clear(rate_limit_keys[1])
+    user.token_version = normalize_token_version(user.token_version)
+    db.commit()
+    db.refresh(user)
     return {"access_token": create_token(user.id, user.token_version), "user": user}
 @router.get("/me", response_model=UserOut)
 def me(user: User = Depends(current_user)): return user

@@ -15,16 +15,27 @@ from .models import Role, User
 pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2 = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
+def normalize_token_version(value: object) -> int:
+    if value is None:
+        return 0
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return 0
+
 def hash_password(value: str) -> str: return pwd.hash(value)
 def verify_password(value: str, hashed: str) -> bool: return pwd.verify(value, hashed)
-def create_token(user_id: int, token_version: int) -> str:
+def create_token(user_id: int, token_version: int | None) -> str:
     exp = datetime.now(timezone.utc) + timedelta(minutes=settings.jwt_expire_minutes)
-    return jwt.encode({"sub": str(user_id), "ver": token_version, "exp": exp}, settings.jwt_secret, algorithm="HS256")
+    return jwt.encode({"sub": str(user_id), "ver": normalize_token_version(token_version), "exp": exp}, settings.jwt_secret, algorithm="HS256")
 
 def decode_token(token: str) -> tuple[int, int] | None:
     try:
         payload = jwt.decode(token, settings.jwt_secret, algorithms=["HS256"])
-        return int(payload.get("sub", "")), int(payload.get("ver", "-1"))
+        raw_version = payload.get("ver", "-1")
+        if raw_version == "-1":
+            return None
+        return int(payload.get("sub", "")), normalize_token_version(raw_version)
     except (JWTError, ValueError, TypeError):
         return None
 
@@ -34,7 +45,7 @@ def current_user(token: str = Depends(oauth2), db: Session = Depends(get_db)) ->
     if decoded is None: raise error
     user_id, token_version = decoded
     user = db.get(User, user_id)
-    if not user or not user.is_active or user.token_version != token_version: raise error
+    if not user or not user.is_active or normalize_token_version(user.token_version) != token_version: raise error
     return user
 
 def admin_user(user: User = Depends(current_user)) -> User:

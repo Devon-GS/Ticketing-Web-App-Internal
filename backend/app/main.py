@@ -36,6 +36,7 @@ def migrate_legacy_users():
         columns = {column["name"] for column in inspect(engine).get_columns("users")}
         if "token_version" not in columns:
             connection.execute(text("ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0"))
+        connection.execute(text("UPDATE users SET token_version = 0 WHERE token_version IS NULL"))
         if "username" not in columns and "email" in columns:
             connection.execute(text("ALTER TABLE users ADD COLUMN username VARCHAR(80)"))
             connection.execute(text("UPDATE users SET username = split_part(email, '@', 1) WHERE username IS NULL"))

@@ -1,7 +1,7 @@
 from fastapi import WebSocket
 from .db import SessionLocal, settings
 from .models import User
-from .auth import decode_token
+from .auth import decode_token, normalize_token_version
 
 
 class ConnectionManager:
@@ -16,7 +16,7 @@ class ConnectionManager:
 
         with SessionLocal() as db:
             user = db.get(User, user_id)
-            if not user or not user.is_active or user.token_version != token_version:
+            if not user or not user.is_active or normalize_token_version(user.token_version) != token_version:
                 return None
             return user
 
