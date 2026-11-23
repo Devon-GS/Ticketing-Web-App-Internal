@@ -1,17 +1,25 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from ..auth import create_token, hash_password, verify_password, current_user
+from ..auth import create_token, current_user, hash_password, login_rate_limiter, login_rate_limit_error, verify_password
 from ..db import get_db
 from ..models import User
 from ..schemas import LoginIn, PasswordChange, Token, UserOut, UsernameAvailability, UsernameUpdate
 
 router = APIRouter()
 @router.post("/login", response_model=Token)
-def login(data: LoginIn, db: Session = Depends(get_db)):
+def login(data: LoginIn, request: Request, db: Session = Depends(get_db)):
+    client_host = request.client.host if request.client else "unknown"
+    rate_limit_keys = [f"ip:{client_host}", f"username:{data.username.casefold()}"]
+    if any(login_rate_limiter.is_limited(key) for key in rate_limit_keys):
+        raise login_rate_limit_error()
     user = db.scalar(select(User).where(User.username == data.username))
-    if not user or not user.is_active or not verify_password(data.password, user.password_hash): raise HTTPException(401, "Invalid username or password")
-    return {"access_token": create_token(user.id), "user": user}
+    if not user or not user.is_active or not verify_password(data.password, user.password_hash):
+        for key in rate_limit_keys:
+            login_rate_limiter.record_failure(key)
+        raise HTTPException(401, "Invalid username or password")
+    login_rate_limiter.clear(rate_limit_keys[1])
+    return {"access_token": create_token(user.id, user.token_version), "user": user}
 @router.get("/me", response_model=UserOut)
 def me(user: User = Depends(current_user)): return user
 
@@ -39,5 +47,6 @@ def change_password(data: PasswordChange, user: User = Depends(current_user), db
     if data.current_password == data.new_password:
         raise HTTPException(400, "New password must be different from your current password")
     user.password_hash = hash_password(data.new_password)
+    user.token_version += 1
     db.commit()
     return {"message": "Password updated successfully"}

@@ -6,7 +6,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://ticketing:ticketing@db:5432/ticketing"
     jwt_secret: str = "development-secret"
-    jwt_expire_minutes: int = 60
+    jwt_expire_minutes: int = 30
+    environment: str = "development"
     admin_username: str = "admin"
     admin_password: str = "ChangeMe123!"
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")

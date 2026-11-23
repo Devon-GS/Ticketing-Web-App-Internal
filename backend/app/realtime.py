@@ -1,8 +1,7 @@
 from fastapi import WebSocket
-from jose import JWTError, jwt
-
 from .db import SessionLocal, settings
 from .models import User
+from .auth import decode_token
 
 
 class ConnectionManager:
@@ -10,14 +9,14 @@ class ConnectionManager:
         self.active_connections: set[WebSocket] = set()
 
     def authenticate(self, token: str) -> User | None:
-        try:
-            user_id = int(jwt.decode(token, settings.jwt_secret, algorithms=["HS256"]).get("sub", ""))
-        except (JWTError, ValueError, TypeError):
+        decoded = decode_token(token)
+        if decoded is None:
             return None
+        user_id, token_version = decoded
 
         with SessionLocal() as db:
             user = db.get(User, user_id)
-            if not user or not user.is_active:
+            if not user or not user.is_active or user.token_version != token_version:
                 return None
             return user
 
