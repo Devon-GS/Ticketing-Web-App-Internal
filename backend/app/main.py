@@ -1,12 +1,16 @@
 from contextlib import asynccontextmanager
+import logging
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import inspect, select, text
 from .db import Base, SessionLocal, engine, settings
-from .models import Label, User
-from .auth import hash_password, verify_password
+from .models import Label, Role, User
+from .auth import hash_password
 from .routers import auth, tickets, admin
 from .realtime import manager
+
+logger = logging.getLogger(__name__)
 
 KNOWN_DEFAULTS = {
     "development-secret", "replace-this-with-a-long-random-secret",
@@ -44,16 +48,12 @@ async def lifespan(app: FastAPI):
     migrate_legacy_users()
     Base.metadata.create_all(engine)
     with SessionLocal() as db:
-        admin = db.scalar(select(User).where(User.username == settings.admin_username))
-        if not admin:
-            db.add(User(username=settings.admin_username, full_name="System Administrator", password_hash=hash_password(settings.admin_password), role="admin"))
+        admin = db.scalar(select(User).where(User.role == Role.admin).limit(1))
+        if admin:
+            logger.info("Administrator account '%s' already exists; skipping bootstrap admin creation", admin.username)
         else:
-            # Keep the configured bootstrap admin usable when credentials change in .env.
-            if not verify_password(settings.admin_password, admin.password_hash):
-                admin.password_hash = hash_password(settings.admin_password)
-                admin.token_version += 1
-            admin.is_active = True
-            admin.role = "admin"
+            db.add(User(username=settings.admin_username, full_name="System Administrator", password_hash=hash_password(settings.admin_password), role=Role.admin))
+            logger.info("Created bootstrap administrator account '%s'", settings.admin_username)
         if not db.scalar(select(Label)):
             db.add_all([Label(name="urgent", color="#dc2626"), Label(name="normal", color="#2563eb"), Label(name="overdue account", color="#d97706")])
         db.commit()
