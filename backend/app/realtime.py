@@ -6,7 +6,7 @@ from .auth import decode_token, normalize_token_version
 
 class ConnectionManager:
     def __init__(self) -> None:
-        self.active_connections: set[WebSocket] = set()
+        self.active_connections: dict[WebSocket, int] = {}
 
     def authenticate(self, token: str) -> User | None:
         decoded = decode_token(token)
@@ -25,11 +25,20 @@ class ConnectionManager:
         if not user:
             return None
 
-        self.active_connections.add(websocket)
+        self.active_connections[websocket] = user.id
         return user
 
     def disconnect(self, websocket: WebSocket) -> None:
-        self.active_connections.discard(websocket)
+        self.active_connections.pop(websocket, None)
+
+    async def close_user_connections(self, user_id: int) -> None:
+        connections = [connection for connection, connection_user_id in self.active_connections.items() if connection_user_id == user_id]
+        for connection in connections:
+            try:
+                await connection.close(code=1008, reason="Session revoked")
+            except Exception:
+                pass
+            self.disconnect(connection)
 
     async def broadcast_refresh(self) -> None:
         message = {"action": "refresh"}

@@ -25,6 +25,10 @@ class PasswordChange(BaseModel):
 class UserCreate(BaseModel):
     username: str = Field(min_length=3, max_length=80, pattern=r"^[A-Za-z0-9._-]+$"); full_name: str = Field(min_length=2, max_length=120); password: str = Field(min_length=8, max_length=128); role: Role = Role.user
 
+class PasswordReset(BaseModel):
+    temporary_password: str = Field(min_length=8, max_length=128)
+    confirm_password: str = Field(min_length=8, max_length=128)
+
 class UserUpdate(BaseModel):
     full_name: str | None = Field(default=None, min_length=2, max_length=120); role: Role | None = None; is_active: bool | None = None
 

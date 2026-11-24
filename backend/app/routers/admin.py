@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from ..auth import admin_user, hash_password
+from ..auth import admin_user, hash_password, normalize_token_version
 from ..db import get_db
 from ..models import Label, User
-from ..schemas import LabelIn, LabelOut, UserCreate, UserOut, UserUpdate
+from ..realtime import manager
+from ..schemas import LabelIn, LabelOut, PasswordReset, UserCreate, UserOut, UserUpdate
 
 router = APIRouter()
 @router.get("/users", response_model=list[UserOut])
@@ -13,6 +14,17 @@ def users(db: Session = Depends(get_db), _: User = Depends(admin_user)): return 
 def create_user(data: UserCreate, db: Session = Depends(get_db), _: User = Depends(admin_user)):
     if db.scalar(select(User).where(User.username == data.username)): raise HTTPException(409, "Username already exists")
     user = User(username=data.username, full_name=data.full_name, password_hash=hash_password(data.password), role=data.role); db.add(user); db.commit(); db.refresh(user); return user
+@router.post("/users/{user_id}/reset-password")
+async def reset_password(user_id: int, data: PasswordReset, db: Session = Depends(get_db), admin: User = Depends(admin_user)):
+    user = db.get(User, user_id)
+    if not user: raise HTTPException(404, "User not found")
+    if user.id == admin.id: raise HTTPException(400, "Administrators must use the normal change-password flow to reset their own password")
+    if data.temporary_password != data.confirm_password: raise HTTPException(400, "Temporary password and confirmation do not match")
+    user.password_hash = hash_password(data.temporary_password)
+    user.token_version = normalize_token_version(user.token_version) + 1
+    db.commit()
+    await manager.close_user_connections(user.id)
+    return {"message": "Password reset successfully"}
 @router.patch("/users/{user_id}", response_model=UserOut)
 def update_user(user_id: int, data: UserUpdate, db: Session = Depends(get_db), _: User = Depends(admin_user)):
     user = db.get(User, user_id)
