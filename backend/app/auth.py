@@ -4,6 +4,7 @@ from threading import Lock
 from time import monotonic
 
 from fastapi import Depends, HTTPException, Request, status
+from ipaddress import ip_address, ip_network
 from fastapi.security import OAuth2PasswordBearer
 import jwt
 from jwt.exceptions import InvalidTokenError as JWTError
@@ -80,6 +81,33 @@ class LoginRateLimiter:
             self.failures.pop(key, None)
 
 login_rate_limiter = LoginRateLimiter()
+
+def normalize_username(value: str) -> str:
+    return value.strip().casefold()
+
+def client_ip(request: Request) -> str:
+    peer = request.client.host if request.client else "unknown"
+    trusted = []
+    for value in settings.trusted_proxy_ips.split(","):
+        value = value.strip()
+        if not value:
+            continue
+        try:
+            trusted.append(ip_network(value, strict=False))
+        except ValueError:
+            continue
+    try:
+        trusted_peer = any(ip_address(peer) in network for network in trusted)
+    except ValueError:
+        trusted_peer = False
+    if trusted_peer:
+        forwarded = request.headers.get("x-real-ip")
+        if forwarded:
+            try:
+                return str(ip_address(forwarded.strip()))
+            except ValueError:
+                pass
+    return peer
 
 def login_rate_limit_error() -> HTTPException:
     return HTTPException(status_code=429, detail="Too many failed login attempts. Try again later.", headers={"Retry-After": "60"})

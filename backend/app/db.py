@@ -5,11 +5,17 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://ticketing:ticketing@db:5432/ticketing"
-    jwt_secret: str = "development-secret"
+    jwt_secret: str = ""
     jwt_expire_minutes: int = 30
-    environment: str = "development"
-    admin_username: str = "admin"
-    admin_password: str = "ChangeMe123!"
+    environment: str = "production"
+    admin_username: str = ""
+    admin_password: str = ""
+    allowed_origins: str = ""
+    allowed_ws_origins: str = ""
+    trusted_proxy_ips: str = ""
+    websocket_auth_timeout_seconds: int = 10
+    websocket_max_auth_message_bytes: int = 4096
+    websocket_max_connections: int = 100
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 settings = Settings()

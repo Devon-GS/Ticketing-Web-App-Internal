@@ -1,4 +1,6 @@
 from contextlib import asynccontextmanager
+import asyncio
+import json
 import logging
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -6,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import inspect, select, text
 from .db import Base, SessionLocal, engine, settings
 from .models import Label, Role, User
-from .auth import hash_password
+from .auth import hash_password, normalize_username
 from .routers import auth, tickets, admin
 from .realtime import manager
 
@@ -17,8 +19,17 @@ KNOWN_DEFAULTS = {
     "replace-this-in-production", "ChangeMe123!", "Admin123!", "admin",
 }
 
+def configured_origins(value: str, *, development_fallback: bool = False) -> list[str]:
+    origins = [item.strip().rstrip("/") for item in value.split(",") if item.strip()]
+    if not origins and development_fallback:
+        return ["http://localhost:5173"]
+    return origins
+
 def validate_startup_settings() -> None:
-    if settings.environment.casefold() != "production":
+    environment = settings.environment.casefold()
+    if environment not in {"production", "development"}:
+        raise RuntimeError("ENVIRONMENT must be either production or development")
+    if environment == "development":
         return
     required = {
         "JWT_SECRET": settings.jwt_secret,
@@ -26,7 +37,10 @@ def validate_startup_settings() -> None:
         "ADMIN_PASSWORD": settings.admin_password,
     }
     known_defaults = {value.casefold() for value in KNOWN_DEFAULTS}
-    if any(not value.strip() or value.casefold() in known_defaults for value in required.values()):
+    if (len(settings.jwt_secret) < 32
+            or any(not value.strip() or value.casefold() in known_defaults for value in required.values())
+            or len(settings.admin_password) < 12
+            or not configured_origins(settings.allowed_origins)):
         raise RuntimeError("Production requires non-default JWT_SECRET, ADMIN_USERNAME, and ADMIN_PASSWORD")
 
 def migrate_legacy_users():
@@ -53,7 +67,7 @@ async def lifespan(app: FastAPI):
         if admin:
             logger.info("Administrator account '%s' already exists; skipping bootstrap admin creation", admin.username)
         else:
-            db.add(User(username=settings.admin_username, full_name="System Administrator", password_hash=hash_password(settings.admin_password), role=Role.admin))
+            db.add(User(username=normalize_username(settings.admin_username), full_name="System Administrator", password_hash=hash_password(settings.admin_password), role=Role.admin))
             logger.info("Created bootstrap administrator account '%s'", settings.admin_username)
         if not db.scalar(select(Label)):
             db.add_all([Label(name="urgent", color="#dc2626"), Label(name="normal", color="#2563eb"), Label(name="overdue account", color="#d97706")])
@@ -63,12 +77,17 @@ async def lifespan(app: FastAPI):
 docs_url = None if settings.environment.casefold() == "production" else "/docs"
 redoc_url = None if settings.environment.casefold() == "production" else "/redoc"
 app = FastAPI(title="Ticketing API", version="1.0.0", lifespan=lifespan, docs_url=docs_url, redoc_url=redoc_url)
-app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=configured_origins(settings.allowed_origins, development_fallback=settings.environment.casefold() == "development"),
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
+)
 
 @app.middleware("http")
 async def security_headers(request, call_next):
     response = await call_next(request)
-    response.headers["Content-Security-Policy"] = "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data:; connect-src 'self' ws: wss:; font-src 'self' https://fonts.gstatic.com data:; form-action 'self'"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
@@ -77,10 +96,32 @@ async def security_headers(request, call_next):
 
 @app.websocket("/api/ws")
 async def websocket_endpoint(websocket: WebSocket):
+    origin = websocket.headers.get("origin", "").rstrip("/")
+    allowed_ws_origins = configured_origins(
+        settings.allowed_ws_origins or settings.allowed_origins,
+        development_fallback=settings.environment.casefold() == "development",
+    )
+    if not origin or origin not in allowed_ws_origins:
+        await websocket.close(code=1008, reason="Origin not allowed")
+        return
+    if manager.at_capacity():
+        await websocket.close(code=1013, reason="Connection capacity reached")
+        return
     await websocket.accept()
 
     try:
-        message = await websocket.receive_json()
+        raw_message = await asyncio.wait_for(websocket.receive(), timeout=settings.websocket_auth_timeout_seconds)
+        if raw_message.get("type") != "websocket.receive":
+            await websocket.close(code=1008, reason="Authentication required")
+            return
+        raw_data = raw_message.get("text")
+        if not isinstance(raw_data, str) or len(raw_data.encode("utf-8")) > settings.websocket_max_auth_message_bytes:
+            await websocket.close(code=1009, reason="Authentication message too large")
+            return
+        try:
+            message = json.loads(raw_data)
+        except (TypeError, json.JSONDecodeError):
+            message = None
         if not isinstance(message, dict) or message.get("type") != "auth" or not isinstance(message.get("token"), str):
             await websocket.close(code=1008, reason="Authentication required")
             return
@@ -93,7 +134,7 @@ async def websocket_endpoint(websocket: WebSocket):
         await websocket.send_json({"type": "auth_ok"})
         while True:
             await websocket.receive_text()
-    except WebSocketDisconnect:
+    except (WebSocketDisconnect, asyncio.TimeoutError):
         pass
     finally:
         manager.disconnect(websocket)

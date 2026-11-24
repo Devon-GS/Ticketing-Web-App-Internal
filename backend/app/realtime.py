@@ -8,6 +8,9 @@ class ConnectionManager:
     def __init__(self) -> None:
         self.active_connections: dict[WebSocket, int] = {}
 
+    def at_capacity(self) -> bool:
+        return len(self.active_connections) >= settings.websocket_max_connections
+
     def authenticate(self, token: str) -> User | None:
         decoded = decode_token(token)
         if decoded is None:

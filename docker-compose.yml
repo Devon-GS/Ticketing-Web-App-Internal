@@ -2,9 +2,9 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-ticketing}
-      POSTGRES_USER: ${POSTGRES_USER:-ticketing}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ticketing}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB must be set}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER must be set}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -18,12 +18,18 @@ services:
   backend:
     build: ./backend
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://ticketing:ticketing@db:5432/ticketing}
-      ENVIRONMENT: ${ENVIRONMENT:-development}
-      JWT_SECRET: ${JWT_SECRET:-replace-this-in-production}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set}
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
       JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES:-30}
-      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-ChangeMe123!}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:?ADMIN_USERNAME must be set}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD must be set}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?ALLOWED_ORIGINS must be set}
+      ALLOWED_WS_ORIGINS: ${ALLOWED_WS_ORIGINS:-}
+      TRUSTED_PROXY_IPS: ${TRUSTED_PROXY_IPS:-}
+      WEBSOCKET_AUTH_TIMEOUT_SECONDS: ${WEBSOCKET_AUTH_TIMEOUT_SECONDS:-10}
+      WEBSOCKET_MAX_AUTH_MESSAGE_BYTES: ${WEBSOCKET_MAX_AUTH_MESSAGE_BYTES:-4096}
+      WEBSOCKET_MAX_CONNECTIONS: ${WEBSOCKET_MAX_CONNECTIONS:-100}
     depends_on:
       db:
         condition: service_healthy

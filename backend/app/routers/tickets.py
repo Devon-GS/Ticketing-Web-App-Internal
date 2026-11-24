@@ -19,7 +19,10 @@ def list_tickets(status: Status | None = None, db: Session = Depends(get_db), us
     return db.scalars(q).unique().all()
 @router.post("", response_model=TicketOut)
 async def create_ticket(data: TicketIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
-    labels = list(db.scalars(select(Label).where(Label.id.in_(data.label_ids)))) if data.label_ids else []
+    label_ids = set(data.label_ids)
+    labels = list(db.scalars(select(Label).where(Label.id.in_(label_ids)))) if label_ids else []
+    if len(labels) != len(label_ids):
+        raise HTTPException(422, "One or more label IDs are invalid")
     ticket = Ticket(title=data.title, description=data.description, created_by_id=user.id, labels=labels)
     db.add(ticket); db.commit(); db.refresh(ticket)
     result = db.scalars(ticket_query().where(Ticket.id == ticket.id)).unique().one()
